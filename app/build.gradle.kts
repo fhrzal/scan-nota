@@ -19,6 +19,8 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
         // Hanya arsitektur ARM yang dipakai HP sungguhan. Tanpa filter ini, library native
         // OpenCV dan ML Kit untuk 4 arsitektur membuat APK sekitar 189 MB.
         ndk {
@@ -46,6 +48,14 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    sourceSets {
+        // Foto nota asli untuk alat ekspor OCR (alat/ekspor_ocr.sh). Folder ini tidak masuk git,
+        // dan hanya dikemas ke APK test, tidak pernah ke APK aplikasi.
+        getByName("androidTest") {
+            assets.srcDir(rootProject.file("data_uji/foto"))
+        }
     }
 }
 
@@ -90,4 +100,8 @@ dependencies {
 
     // Unit test untuk fungsi murni (Levenshtein, parsing, merge)
     testImplementation(libs.junit)
+
+    // Instrumented test di HP/emulator: smoke test ML Kit dan alat ekspor OCR nota asli
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }

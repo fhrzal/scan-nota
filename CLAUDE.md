@@ -65,7 +65,8 @@ Pengguna: pemilik Toko Kelontong Pak Cipto, Kediri.
 
 ## Struktur modul (paket `com.scannota`, folder `app/src/main/java/com/scannota/`)
 1. `preprocessing/` : OpenCV, grayscale, deskew, threshold, denoise
-2. `ocr/` : pembungkus ML Kit, mengembalikan daftar baris beserta skor keyakinan
+2. `ocr/` : pembungkus ML Kit, mengembalikan daftar baris beserta skor keyakinan, dan menyusun
+   potongan teks yang sejajar menjadi baris nota (baris visual)
 3. `parsing/` : mengubah baris teks menjadi nama barang, qty, harga, subtotal, dan total
 4. `merge/` : penggabungan beberapa foto nota berdasarkan tumpang tindih baris
 5. `matching/` : Levenshtein dan alias barang per pemasok
@@ -80,11 +81,26 @@ Unit test ada di `app/src/test/java/com/scannota/`.
 1. `data/`: selesai (2026-11-11). Query DAO belum diuji di perangkat; uji instrumented menyusul bersama `ui/`.
 2. `matching/`: selesai (2026-11-11). Catatan untuk `ui/`: memperbaiki alias lama yang keliru
    (`HasilSimpanAlias.BERTENTANGAN`) butuh query ubah/hapus alias di `data/`. Minta persetujuan dulu.
-3. `ocr/`
+3. `ocr/`: selesai (2026-11-12). Smoke test lulus di HP (vivo, Android 15). Alat ekspor sudah
+   diuji tanpa foto (dilewati dengan benar). Jalur lengkap dengan foto belum teruji di perangkat,
+   karena HP menolak memasang APK test (`INSTALL_FAILED_VERIFICATION_FAILURE`, kemungkinan layar
+   terkunci). Jalankan `alat/ekspor_ocr.sh` saat foto nota asli tersedia, sebelum mulai `parsing/`.
 4. `parsing/`: aturan dibangun dari hasil OCR nota asli
 5. `merge/`
 6. `preprocessing/`: dievaluasi dengan membandingkan hasil OCR sebelum dan sesudah pengolahan citra pada foto yang sama
 7. `ui/`
+
+## Catatan ML Kit (terbukti di perangkat, jangan diubah tanpa uji ulang)
+- Pustaka bundled `com.google.mlkit:text-recognition` menarik `play-services-mlkit-text-recognition`.
+  Itu dependensi resmi Google: hanya kelas API (sekitar 3 KB) tanpa model dan tanpa unduhan.
+  Modelnya ada di aset pustaka bundled. Jangan dihapus atau dikecualikan.
+- ML Kit memakai nilai rotasi untuk membaca teks, tetapi koordinat yang dikembalikan mengacu pada
+  bitmap asli yang belum diputar. `putarKeTegak` memindahkannya ke foto tegak. Buktinya ada di
+  smoke test `rotasiDiterapkan_koordinatMengacuFotoTegak`.
+- Kemiringan (`kemiringanDerajat`) dihitung sendiri dari titik sudut: positif = ujung kanan lebih rendah.
+- `AMBANG_TUMPANG_TINDIH_PERSEN = 50` untuk menyusun baris visual adalah nilai awal. Uji dengan
+  hasil OCR nota asli di sesi `parsing/`, dan laporkan dulu sebelum mengubahnya.
+- Skor keyakinan diteruskan apa adanya. Belum ada ambang yang dibuat darinya; diputuskan di `ui/` berdasarkan data.
 
 ## Cara bekerja
 - Kerjakan satu modul per sesi. Jangan mengerjakan dua modul sekaligus.
@@ -106,9 +122,18 @@ Unit test ada di `app/src/test/java/com/scannota/`.
 - Emulator: AVD `Uji_Nota_API36` (Android 16, x86_64, RAM 2 GB, 4 core, data 4 GB).
   Kamera belakang memakai webcam laptop. RAM laptop tidak cukup untuk menjalankan emulator bersamaan
   dengan Android Studio dan banyak tab Chrome. Untuk uji OCR sungguhan, utamakan HP fisik.
+  Pada 2026-11-12 emulator macet (thread CPU tidak merespons, lalu crash) saat swap laptop sekitar 4,6 GB,
+  walau `./gradlew --stop` sudah dijalankan. Instrumented test akhirnya dijalankan di HP.
+- HP uji: vivo (model V2322, Android 15, arm64-v8a). Saat pemasangan lewat USB, layar HP harus
+  terbuka, supaya konfirmasi pemasangan bisa muncul.
 
 ## Perintah
 - Build APK debug: `./gradlew assembleDebug`
 - Unit test: `./gradlew testDebugUnitTest`
 - Jalankan emulator: `~/Android/Sdk/emulator/emulator -avd Uji_Nota_API36`
 - Pasang ke emulator/HP: `./gradlew installDebug`
+- Instrumented test tanpa menghapus aplikasi: pasang APK debug dan APK test dengan `adb install -r -t`,
+  lalu `adb shell am instrument -w -e class com.scannota.ocr.PengenalTeksSmokeTest com.scannota.test/androidx.test.runner.AndroidJUnitRunner`
+- Ekspor OCR nota asli: salin foto ke `data_uji/foto/`, lalu `alat/ekspor_ocr.sh <label>`
+- Jangan pakai `./gradlew connectedDebugAndroidTest` di HP toko: tugas itu menghapus aplikasi
+  beserta databasenya setelah selesai.

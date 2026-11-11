@@ -9,3 +9,7 @@
 /captures/
 .externalNativeBuild/
 .cxx/
+
+# Foto nota asli dan hasil OCR-nya tidak masuk git (lihat data_uji/README.md)
+/data_uji/foto/
+/data_uji/hasil_ocr/
