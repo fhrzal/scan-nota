@@ -81,10 +81,11 @@ Unit test ada di `app/src/test/java/com/scannota/`.
 1. `data/`: selesai (2026-11-11). Query DAO belum diuji di perangkat; uji instrumented menyusul bersama `ui/`.
 2. `matching/`: selesai (2026-11-11). Catatan untuk `ui/`: memperbaiki alias lama yang keliru
    (`HasilSimpanAlias.BERTENTANGAN`) butuh query ubah/hapus alias di `data/`. Minta persetujuan dulu.
-3. `ocr/`: selesai (2026-11-12). Smoke test lulus di HP (vivo, Android 15). Alat ekspor sudah
-   diuji tanpa foto (dilewati dengan benar). Jalur lengkap dengan foto belum teruji di perangkat,
-   karena HP menolak memasang APK test (`INSTALL_FAILED_VERIFICATION_FAILURE`, kemungkinan layar
-   terkunci). Jalankan `alat/ekspor_ocr.sh` saat foto nota asli tersedia, sebelum mulai `parsing/`.
+3. `ocr/`: selesai (2026-11-12). Smoke test lulus di HP (vivo Y27s, Android 15). Alat ekspor teruji
+   dengan 6 foto nota asli dari pengguna (hasil di `data_uji/hasil_ocr/tanpa_olah/`), termasuk foto
+   dengan rotasi EXIF 270°. Waktu OCR sekitar 0,3–1,5 detik per foto di HP itu.
+   Temuan untuk `parsing/`: pada bagian bawah nota yang kertasnya melengkung, kemiringan lokal
+   (−2° sampai −4°) berbeda dari median foto, sehingga beberapa baris nota tergabung.
 4. `parsing/`: aturan dibangun dari hasil OCR nota asli
 5. `merge/`
 6. `preprocessing/`: dievaluasi dengan membandingkan hasil OCR sebelum dan sesudah pengolahan citra pada foto yang sama
@@ -124,7 +125,7 @@ Unit test ada di `app/src/test/java/com/scannota/`.
   dengan Android Studio dan banyak tab Chrome. Untuk uji OCR sungguhan, utamakan HP fisik.
   Pada 2026-11-12 emulator macet (thread CPU tidak merespons, lalu crash) saat swap laptop sekitar 4,6 GB,
   walau `./gradlew --stop` sudah dijalankan. Instrumented test akhirnya dijalankan di HP.
-- HP uji: vivo (model V2322, Android 15, arm64-v8a). Saat pemasangan lewat USB, layar HP harus
+- HP uji: vivo Y27s (model V2322, Android 15, arm64-v8a). Foto nota dari pengguna juga diambil dengan HP ini. Saat pemasangan lewat USB, layar HP harus
   terbuka, supaya konfirmasi pemasangan bisa muncul.
 
 ## Perintah
