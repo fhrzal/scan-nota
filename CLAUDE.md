@@ -49,8 +49,19 @@ Pengguna: pemilik Toko Kelontong Pak Cipto, Kediri.
   muncul sebagai kandidat untuk dikonfirmasi. Di bawah itu, kemiripan lebih mungkin kebetulan.
 - Ini nilai awal yang wajib diuji dengan nota asli di bab pengujian. Jika hasil uji menyarankan perubahan,
   laporkan dulu; pengguna yang memutuskan.
-- Masih terbuka untuk sesi matching/: varian ukuran (nama panjang yang hanya beda 1–2 digit angka) bisa
-  lolos ≥ 0,90. Usulan penangkalnya: angka di kedua nama harus sama persis agar boleh dicocokkan otomatis.
+- Ambang dibandingkan dengan bilangan bulat (100 × jarak ≤ (100 − p) × panjang), bukan desimal.
+  Buktinya ada di test `galatDesimal_alasanMemakaiBilanganBulat`: dengan desimal, nama 10 huruf yang salah
+  1 huruf (tepat 0,90) bisa salah jatuh ke konfirmasi karena 1 − 0,90 dihitung 0,09999999999999998.
+
+## Aturan pencocokan tambahan (disetujui pengguna, tidak mengubah nilai ambang)
+- Penjaga angka: otomatis hanya jika deret angka di kedua nama sama persis. Kalau tidak, turun ke konfirmasi.
+  Ini mencegah varian ukuran (250 vs 500) tercocokkan otomatis.
+- Skor kembar: jika dua barang berbeda sama-sama mendapat skor tertinggi di zona otomatis, turun ke konfirmasi.
+- Alias persis milik pemasok yang sama selalu otomatis, karena pasangan itu sudah pernah dikonfirmasi pengguna.
+- Kandidat Levenshtein: alias milik pemasok ini dan nama baku semua barang (bukan alias pemasok lain).
+- Alias hanya disimpan saat pengguna mengonfirmasi, tidak pernah dari pencocokan otomatis.
+  Barang baru tidak pernah dibuat otomatis.
+- Normalisasi minimal: huruf kapital dan spasi dirapikan. Tanda baca tidak dibuang dan O tidak diganti 0.
 
 ## Struktur modul (paket `com.scannota`, folder `app/src/main/java/com/scannota/`)
 1. `preprocessing/` : OpenCV, grayscale, deskew, threshold, denoise
@@ -67,7 +78,8 @@ Unit test ada di `app/src/test/java/com/scannota/`.
 ## Urutan pengerjaan (usulan, satu modul per sesi)
 0. Kerangka proyek: selesai (2026-11-11)
 1. `data/`: selesai (2026-11-11). Query DAO belum diuji di perangkat; uji instrumented menyusul bersama `ui/`.
-2. `matching/`
+2. `matching/`: selesai (2026-11-11). Catatan untuk `ui/`: memperbaiki alias lama yang keliru
+   (`HasilSimpanAlias.BERTENTANGAN`) butuh query ubah/hapus alias di `data/`. Minta persetujuan dulu.
 3. `ocr/`
 4. `parsing/`: aturan dibangun dari hasil OCR nota asli
 5. `merge/`
