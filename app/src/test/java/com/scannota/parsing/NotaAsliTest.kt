@@ -147,9 +147,11 @@ internal data class Evaluasi(
  * barang terbaca paling mirip (kemiripan ≥ 0,5) di antara 3 barang berikutnya. Angka 0,5 dan 3
  * hanya untuk penilaian test ini, bukan bagian aplikasi.
  */
-internal fun evaluasi(nama: String): Evaluasi {
-    val kunci = NotaAsli.kunci(nama)
-    val nota = bacaNotaOren(susunBarisVisual(NotaAsli.ocr(nama).baris))
+internal fun evaluasi(nama: String): Evaluasi =
+    evaluasiNota(nama, bacaNotaOren(susunBarisVisual(NotaAsli.ocr(nama).baris)), NotaAsli.kunci(nama))
+
+/** Seperti [evaluasi], untuk nota yang dibaca dengan cara lain (misalnya gabungan beberapa foto). */
+internal fun evaluasiNota(nama: String, nota: NotaTerbaca, kunci: KunciNota): Evaluasi {
     val hasil = nota.barang
 
     val pasangan = mutableMapOf<Int, Int>()

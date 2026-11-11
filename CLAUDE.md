@@ -93,7 +93,10 @@ Unit test ada di `app/src/test/java/com/scannota/`.
    dicocokkan pengguna dengan nota kertasnya.
    Catatan untuk `ui/`: nomor nota sering salah baca (UTM terbaca UTH di 4 dari 5 foto), jadi
    pengguna harus memeriksa nomor sebelum disimpan, karena pemeriksaan nota ganda memakai nomor itu.
-5. `merge/`
+5. `merge/`: kode selesai (2026-11-12). Gabungan nota 005493 (foto b lalu a) menghasilkan 26 barang
+   tanpa ganda, dan 22 barang benar dibanding 20 dari foto a saja. Evaluasi potongan buatan belum
+   dijalankan karena HP terlepas saat ekspor; fotonya sudah ada di `data_uji/foto/potongan_buatan_*`.
+   Evaluasi dengan foto bersambung sungguhan menunggu foto dari pengguna.
 6. `preprocessing/`: dievaluasi dengan membandingkan hasil OCR sebelum dan sesudah pengolahan citra pada foto yang sama
 7. `ui/`
 
@@ -129,6 +132,18 @@ Unit test ada di `app/src/test/java/com/scannota/`.
 - `BARIS=` dan `QTY=` di kaki nota hanya menghasilkan peringatan tambahan. Aturan "lengkap" tidak berubah.
 - Ukuran keamanan utama: barang salah tanpa tanda harus 0 (test `tidakAdaBarangSalahTanpaTanda`).
   `BATAS_BARANG_BENAR` di `NotaAsliTest` dinaikkan jika pembaca nota diperbaiki, dan tidak boleh diturunkan.
+
+## Aturan penggabungan foto (disetujui pengguna 2026-11-12)
+- Penjajaran baris memakai pemrograman dinamis (prinsip Levenshtein, satuannya baris). Dua baris
+  dianggap sama jika kemiripannya ≥ 0,70 (memakai lagi ambang konfirmasi matching/): +1. Pasangan
+  yang tidak mirip, atau baris yang hanya ada di satu foto: −1.
+- Sambungan diterima jika nilainya ≥ 2 (`NILAI_MINIMAL_SAMBUNGAN`). Tumpang tindih satu baris saja
+  ditolak, jadi layar `ui/` harus meminta pengguna memotret dengan tumpang tindih yang cukup.
+- Di daerah tumpang tindih, setengah atas diambil dari foto atas dan setengah bawah dari foto bawah.
+  Baris tanpa pasangan cocok tetap disimpan semua (lebih baik ganda dan ditandai daripada hilang).
+- Foto dianggap berurutan dari atas ke bawah sesuai urutan pengambilan. Urutan tidak ditebak otomatis.
+- Potongan buatan (`potongan_buatan_*`) adalah foto asli yang dipotong untuk uji terkendali, atas
+  persetujuan pengguna. Potongan itu tidak menggantikan foto bersambung sungguhan di bab pengujian.
 
 ## Cara bekerja
 - Kerjakan satu modul per sesi. Jangan mengerjakan dua modul sekaligus.
