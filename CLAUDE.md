@@ -26,9 +26,16 @@ Pengguna: pemilik Toko Kelontong Pak Cipto, Kediri.
   - barang baru jika kemiripan < 0,70
   Jangan mengubah nilai ambang tanpa instruksi saya.
 - Verifikasi total: jumlah subtotal harus sama dengan total nota. Jika tidak, tandai "belum lengkap".
+  Nota yang totalnya tidak terbaca juga "belum lengkap".
+- Status harga: dibandingkan dengan pembelian sebelumnya untuk barang yang sama, dari pemasok yang sama,
+  dengan satuan yang sama. Ada 4 status: naik, turun, tetap, belum ada pembanding.
+  Status harga dan status kelengkapan dihitung lewat query, tidak disimpan di tabel.
+- Nota ganda ditolak oleh database: pasangan (pemasok, nomor nota) unik, tanpa membedakan huruf besar/kecil.
+  Nota tanpa nomor tetap boleh disimpan.
 - Jangan membuat data nota fiktif atau mengisi angka uji secara otomatis.
   Data uji parsing harus berasal dari nota asli yang diberikan pengguna.
-  Test Levenshtein boleh memakai pasangan kata umum yang bukan data nota.
+  Test logika (Levenshtein, status harga, verifikasi total) boleh memakai kata atau angka contoh sintetis
+  yang ditandai jelas, hanya di kode test, dan tidak pernah masuk database aplikasi.
 - Komentar kode dan teks antarmuka dalam Bahasa Indonesia.
 - Setiap fungsi penting diberi komentar singkat yang menjelaskan alasannya, karena saya harus bisa menjelaskannya saat sidang.
 
@@ -51,14 +58,15 @@ Pengguna: pemilik Toko Kelontong Pak Cipto, Kediri.
 3. `parsing/` : mengubah baris teks menjadi nama barang, qty, harga, subtotal, dan total
 4. `merge/` : penggabungan beberapa foto nota berdasarkan tumpang tindih baris
 5. `matching/` : Levenshtein dan alias barang per pemasok
-6. `data/` : entity dan DAO Room untuk barang, alias_barang, nota, detail_nota
+6. `data/` : entity dan DAO Room untuk pemasok, barang, alias_barang, nota, detail_nota
+   (tabel pemasok ditambahkan atas persetujuan pengguna karena alias berlaku per pemasok)
 7. `ui/` : layar kamera, hasil OCR, daftar barang, status harga
 
 Unit test ada di `app/src/test/java/com/scannota/`.
 
 ## Urutan pengerjaan (usulan, satu modul per sesi)
 0. Kerangka proyek: selesai (2026-11-11)
-1. `data/`
+1. `data/`: selesai (2026-11-11). Query DAO belum diuji di perangkat; uji instrumented menyusul bersama `ui/`.
 2. `matching/`
 3. `ocr/`
 4. `parsing/`: aturan dibangun dari hasil OCR nota asli

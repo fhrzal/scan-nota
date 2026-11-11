@@ -55,6 +55,11 @@ kotlin {
     }
 }
 
+ksp {
+    // Room mengekspor struktur tabel (JSON) ke app/schemas/, bisa dipakai sebagai dasar ERD.
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     // Dasar Android + Compose
     implementation(libs.androidx.core.ktx)
