@@ -1,6 +1,7 @@
 package com.scannota.ocr
 
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 
 /**
@@ -46,9 +47,25 @@ fun perkiraanKemiringan(baris: List<BarisOcr>): Float {
     return if (sudut.size % 2 == 1) sudut[tengah] else (sudut[tengah - 1] + sudut[tengah]) / 2f
 }
 
-/** Rentang satu baris ML Kit setelah koordinatnya diluruskan. */
-private class Rentang(val baris: BarisOcr, val atas: Double, val bawah: Double, val kiri: Double) {
+/** Rentang satu baris ML Kit setelah koordinatnya diputar sebesar −sudut. */
+private class Rentang(val atas: Double, val bawah: Double, val kiri: Double, val kanan: Double) {
     val tengah: Double get() = (atas + bawah) / 2
+}
+
+/** Rumus rotasi sebesar −θ: x' = x·cos θ + y·sin θ, y' = −x·sin θ + y·cos θ. */
+private fun rentang(baris: BarisOcr, sudutDerajat: Float): Rentang {
+    val theta = Math.toRadians(sudutDerajat.toDouble())
+    val cosT = cos(theta)
+    val sinT = sin(theta)
+    val x = baris.titikSudut.map { it.x * cosT + it.y * sinT }
+    val y = baris.titikSudut.map { -it.x * sinT + it.y * cosT }
+    return Rentang(atas = y.min(), bawah = y.max(), kiri = x.min(), kanan = x.max())
+}
+
+/** Panjang tepi atas (kiri atas ke kanan atas); dipakai untuk memilih potongan acuan kemiringan. */
+private fun panjangTepiAtas(baris: BarisOcr): Double {
+    val (a, b) = baris.titikSudut
+    return hypot((b.x - a.x).toDouble(), (b.y - a.y).toDouble())
 }
 
 /**
@@ -60,14 +77,13 @@ private class Rentang(val baris: BarisOcr, val atas: Double, val bawah: Double, 
  * langsung dibaca per baris nota.
  *
  * Langkah:
- * 1. Perkirakan kemiringan foto (median kemiringan baris), lalu putar keempat titik sudut setiap
- *    baris ke arah sebaliknya. Tanpa langkah ini, pada foto yang miring sedikit, ujung kanan
- *    sebuah baris nota sejajar dengan baris berikutnya. Ini hanya meluruskan koordinat;
- *    meluruskan gambar (deskew) tetap tugas preprocessing/.
- * 2. Urutkan dari atas ke bawah berdasarkan titik tengah vertikalnya.
- * 3. Masukkan setiap potongan ke baris nota terakhir jika tumpang tindihnya cukup
- *    ([cukupTumpangTindih]). Jika tidak, mulai baris nota baru.
- * 4. Di dalam setiap baris nota, urutkan potongan dari kiri ke kanan.
+ * 1. Perkirakan kemiringan foto (median kemiringan baris), lalu urutkan potongan dari atas ke
+ *    bawah setelah koordinatnya diluruskan dengan sudut itu.
+ * 2. Masukkan setiap potongan ke baris nota terakhir jika [bolehMasuk]. Jika tidak, mulai baris
+ *    nota baru.
+ * 3. Di dalam setiap baris nota, urutkan potongan dari kiri ke kanan.
+ *
+ * Meluruskan koordinat tidak mengubah gambar; meluruskan gambar (deskew) tetap tugas preprocessing/.
  *
  * Baris tanpa posisi tidak bisa ditempatkan, jadi diletakkan di akhir, masing-masing sebagai
  * baris tersendiri. Baris itu tidak dibuang, karena teks yang hilang diam-diam bisa membuat
@@ -80,37 +96,57 @@ fun susunBarisVisual(
     require(ambangPersen in 1..100) { "ambang harus 1–100 persen" }
     val (berposisi, tanpaPosisi) = baris.partition { it.titikSudut.isNotEmpty() }
 
-    // Langkah 1. Rumus rotasi sebesar −θ: x' = x·cos θ + y·sin θ, y' = −x·sin θ + y·cos θ
-    val theta = Math.toRadians(perkiraanKemiringan(berposisi).toDouble())
-    val cosT = cos(theta)
-    val sinT = sin(theta)
-    val rentang = berposisi.map { b ->
-        val xBaru = b.titikSudut.map { it.x * cosT + it.y * sinT }
-        val yBaru = b.titikSudut.map { -it.x * sinT + it.y * cosT }
-        Rentang(b, atas = yBaru.min(), bawah = yBaru.max(), kiri = xBaru.min())
-    }
+    // Langkah 1.
+    val sudutFoto = perkiraanKemiringan(berposisi)
+    val urut = berposisi.map { it to rentang(it, sudutFoto) }
+        .sortedWith(compareBy({ it.second.tengah }, { it.second.kiri }))
 
-    // Langkah 2 dan 3.
-    val kelompok = mutableListOf<MutableList<Rentang>>()
-    var atasKelompok = 0.0
-    var bawahKelompok = 0.0
-    for (r in rentang.sortedWith(compareBy({ it.tengah }, { it.kiri }))) {
+    // Langkah 2.
+    val kelompok = mutableListOf<MutableList<Pair<BarisOcr, Rentang>>>()
+    for (p in urut) {
         val terakhir = kelompok.lastOrNull()
-        if (terakhir != null && cukupTumpangTindih(r.atas, r.bawah, atasKelompok, bawahKelompok, ambangPersen)) {
-            terakhir += r
-            atasKelompok = minOf(atasKelompok, r.atas)
-            bawahKelompok = maxOf(bawahKelompok, r.bawah)
+        if (terakhir != null && bolehMasuk(p.first, terakhir.map { it.first }, ambangPersen)) {
+            terakhir += p
         } else {
-            kelompok += mutableListOf(r)
-            atasKelompok = r.atas
-            bawahKelompok = r.bawah
+            kelompok += mutableListOf(p)
         }
     }
 
-    // Langkah 4.
-    return kelompok.map { isi -> BarisVisual(isi.sortedBy { it.kiri }.map { it.baris }) } +
+    // Langkah 3.
+    return kelompok.map { isi -> BarisVisual(isi.sortedBy { it.second.kiri }.map { it.first }) } +
         tanpaPosisi.map { BarisVisual(listOf(it)) }
 }
+
+/**
+ * Apakah potongan [calon] termasuk baris nota yang berisi [anggota].
+ *
+ * Dua aturan ditambahkan setelah diuji pada nota asli. Pada bagian bawah nota yang kertasnya
+ * melengkung, kemiringan lokal (−2° sampai −4°) berbeda dari median foto (sekitar 0°), sehingga
+ * baris nama tergabung dengan baris harga di bawahnya.
+ * - Kemiringan lokal: posisi dibandingkan setelah diluruskan dengan kemiringan potongan terpanjang
+ *   di baris itu, bukan kemiringan seluruh foto. Potongan terpanjang dipakai karena sudut
+ *   potongan pendek (misalnya satu angka) kurang akurat.
+ * - Tidak bertumpuk mendatar: dalam satu baris cetak, dua potongan teks tidak mungkin menempati
+ *   posisi mendatar yang sama. Jika bertumpuk, keduanya pasti dari baris cetak yang berbeda.
+ * Syarat tumpang tindih vertikal ([cukupTumpangTindih], ambang 50%) tetap sama.
+ *
+ * Hasil pada 5 foto nota asli (117 barang):
+ * - baris harga yang tersusun utuh naik dari 109 menjadi 113 (prototipe, sebelum aturan ditulis);
+ * - barang yang semua angkanya terbaca benar oleh parsing/ naik dari 104 menjadi 108
+ *   (NotaAsliTest), dan barang yang terlewat turun dari 3 menjadi 0.
+ */
+private fun bolehMasuk(calon: BarisOcr, anggota: List<BarisOcr>, ambangPersen: Int): Boolean {
+    val acuan = anggota.maxBy { panjangTepiAtas(it) }
+    val sudutLokal = acuan.kemiringan ?: 0f
+    val c = rentang(calon, sudutLokal)
+    val a = anggota.map { rentang(it, sudutLokal) }
+    if (!cukupTumpangTindih(c.atas, c.bawah, a.minOf { it.atas }, a.maxOf { it.bawah }, ambangPersen)) return false
+    return a.none { bertumpukMendatar(c.kiri, c.kanan, it.kiri, it.kanan) }
+}
+
+/** true jika dua rentang mendatar beririsan lebih dari nol (bersentuhan di tepi masih boleh). */
+internal fun bertumpukMendatar(kiri1: Double, kanan1: Double, kiri2: Double, kanan2: Double): Boolean =
+    minOf(kanan1, kanan2) - maxOf(kiri1, kiri2) > 0
 
 /**
  * Apakah dua rentang vertikal cukup tumpang tindih untuk dianggap satu baris.

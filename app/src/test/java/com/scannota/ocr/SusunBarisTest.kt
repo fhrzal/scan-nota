@@ -168,6 +168,59 @@ class SusunBarisTest {
         )
     }
 
+    /**
+     * Dua potongan di posisi mendatar yang sama tidak mungkin satu baris cetak, walaupun rentang
+     * tingginya tumpang tindih 67%. Contoh dari nota asli: total dan angka Tunai yang berdempetan.
+     */
+    @Test
+    fun potonganBertumpukMendatar_tidakDisatukan() {
+        val masukan = listOf(baris("111", 600, 100, 700, 130), baris("222", 605, 110, 705, 140))
+        assertEquals(listOf("111", "222"), teksPerBaris(susunBarisVisual(masukan)))
+    }
+
+    @Test
+    fun bersentuhanDiTepi_bukanBertumpuk() {
+        assertFalse(bertumpukMendatar(0.0, 100.0, 100.0, 200.0))
+        assertTrue(bertumpukMendatar(0.0, 100.0, 99.0, 200.0))
+    }
+
+    /**
+     * Kertas melengkung: lima baris lurus (median kemiringan foto 0°) dan satu baris di bawahnya
+     * miring −4°. Ujung kanan baris miring itu naik sekitar 54 piksel. Dengan kemiringan seluruh
+     * foto, kedua potongannya terpisah. Dengan kemiringan lokal (potongan terpanjang di baris),
+     * keduanya tetap satu baris.
+     */
+    @Test
+    fun kemiringanLokal_barisMelengkungDiFotoLurus_tetapSatuBaris() {
+        val lurus = (0 until 5).flatMap { i ->
+            val atas = 100 + 45 * i
+            listOf(baris("KIRI$i", 20, atas, 520, atas + 30), baris("KANAN$i", 800, atas, 1000, atas + 30))
+        }
+        val miring = listOf(
+            barisMiringDi("MIRINGKIRI", 20, 600, 520, 630, -4.0, pusatX = 20, pusatY = 600),
+            barisMiringDi("MIRINGKANAN", 800, 600, 1000, 630, -4.0, pusatX = 20, pusatY = 600),
+        )
+        val hasil = teksPerBaris(susunBarisVisual(lurus + miring))
+        assertEquals(0f, perkiraanKemiringan(lurus + miring), 0.01f)
+        assertEquals(6, hasil.size)
+        assertEquals("MIRINGKIRI MIRINGKANAN", hasil.last())
+    }
+
+    /** Baris yang diputar sebesar [derajat] terhadap titik pusat tertentu. */
+    private fun barisMiringDi(
+        teks: String, kiri: Int, atas: Int, kanan: Int, bawah: Int, derajat: Double, pusatX: Int, pusatY: Int,
+    ): BarisOcr {
+        val r = Math.toRadians(derajat)
+        fun putar(x: Int, y: Int): Titik {
+            val dx = (x - pusatX).toDouble()
+            val dy = (y - pusatY).toDouble()
+            return Titik((pusatX + dx * cos(r) - dy * sin(r)).roundToInt(), (pusatY + dx * sin(r) + dy * cos(r)).roundToInt())
+        }
+        return baris(teks, 0, 0, 0, 0).copy(
+            titikSudut = listOf(putar(kiri, atas), putar(kanan, atas), putar(kanan, bawah), putar(kiri, bawah)),
+        )
+    }
+
     @Test
     fun barisTanpaPosisi_diletakkanDiAkhir_tidakDibuang() {
         val tanpaPosisi = BarisOcr("TANPA POSISI", 0.5f, emptyList(), 0, emptyList())

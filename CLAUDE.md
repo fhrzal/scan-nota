@@ -86,7 +86,13 @@ Unit test ada di `app/src/test/java/com/scannota/`.
    dengan rotasi EXIF 270°. Waktu OCR sekitar 0,3–1,5 detik per foto di HP itu.
    Temuan untuk `parsing/`: pada bagian bawah nota yang kertasnya melengkung, kemiringan lokal
    (−2° sampai −4°) berbeda dari median foto, sehingga beberapa baris nota tergabung.
-4. `parsing/`: aturan dibangun dari hasil OCR nota asli
+4. `parsing/`: selesai (2026-11-12) untuk format Toko Oren. Hasil pada 5 foto nota asli:
+   108 dari 117 barang semua angkanya benar, 0 barang salah tanpa tanda (`NotaAsliTest`).
+   Format toko lain (foto `tokolain_tanpanomor`) belum didukung; dikerjakan setelah ada 2–3 nota
+   asli dari toko itu. Kunci jawaban di `nota_asli/*.kunci.tsv` disalin dari foto dan masih perlu
+   dicocokkan pengguna dengan nota kertasnya.
+   Catatan untuk `ui/`: nomor nota sering salah baca (UTM terbaca UTH di 4 dari 5 foto), jadi
+   pengguna harus memeriksa nomor sebelum disimpan, karena pemeriksaan nota ganda memakai nomor itu.
 5. `merge/`
 6. `preprocessing/`: dievaluasi dengan membandingkan hasil OCR sebelum dan sesudah pengolahan citra pada foto yang sama
 7. `ui/`
@@ -99,9 +105,30 @@ Unit test ada di `app/src/test/java/com/scannota/`.
   bitmap asli yang belum diputar. `putarKeTegak` memindahkannya ke foto tegak. Buktinya ada di
   smoke test `rotasiDiterapkan_koordinatMengacuFotoTegak`.
 - Kemiringan (`kemiringanDerajat`) dihitung sendiri dari titik sudut: positif = ujung kanan lebih rendah.
-- `AMBANG_TUMPANG_TINDIH_PERSEN = 50` untuk menyusun baris visual adalah nilai awal. Uji dengan
-  hasil OCR nota asli di sesi `parsing/`, dan laporkan dulu sebelum mengubahnya.
+- `AMBANG_TUMPANG_TINDIH_PERSEN = 50` untuk menyusun baris visual tetap dipakai. Pada 2026-11-12,
+  atas persetujuan pengguna, `susunBarisVisual` mendapat dua aturan tambahan: kemiringan lokal
+  (diambil dari potongan terpanjang di baris itu) dan larangan menggabungkan dua potongan yang
+  bertumpuk secara mendatar. Hasilnya, barang yang semua angkanya benar naik dari 104 menjadi 108
+  dari 117, dan barang terlewat turun dari 3 menjadi 0. Laporkan dulu sebelum mengubah aturan ini.
 - Skor keyakinan diteruskan apa adanya. Belum ada ambang yang dibuat darinya; diputuskan di `ui/` berdasarkan data.
+
+## Aturan parsing (disetujui pengguna 2026-11-12)
+- Data uji parsing: hasil OCR nota asli dan kunci jawabannya disimpan di
+  `app/src/test/resources/nota_asli/` dan masuk git (pilihan pengguna). Foto aslinya tetap di luar
+  git (`data_uji/foto/`). Berkas itu memuat nama pelanggan dan nomor WA toko, jadi repositori
+  jangan dibuat publik tanpa persetujuan pengguna.
+- Huruf mirip angka (O/o/D→0, I/i/l→1, S→5, b→6, B→8) diganti hanya di dalam token angka. Nama barang
+  tidak pernah diubah.
+- Uang dibaca sebagai rupiah bulat. Dua angka desimalnya diabaikan, karena rupiah tidak memakai sen.
+  Qty disimpan dalam perseratus (bilangan bulat).
+- Pemeriksaan `harga × qty = subtotal` per baris: jika tidak cocok, barang ditandai meragukan dan
+  tidak pernah dikoreksi otomatis. Nilai yang tidak terbaca dibiarkan kosong, tidak ditebak.
+- Satuan disamakan ke `SATUAN_DIKENAL` (PCS, RTG, PAK, KG; diambil dari nota asli) jika jaraknya
+  ≤ 1 dari tepat satu satuan baku. Selain itu, satuan dibiarkan apa adanya dan ditandai.
+  Satuan baru ditambahkan hanya setelah muncul di nota asli.
+- `BARIS=` dan `QTY=` di kaki nota hanya menghasilkan peringatan tambahan. Aturan "lengkap" tidak berubah.
+- Ukuran keamanan utama: barang salah tanpa tanda harus 0 (test `tidakAdaBarangSalahTanpaTanda`).
+  `BATAS_BARANG_BENAR` di `NotaAsliTest` dinaikkan jika pembaca nota diperbaiki, dan tidak boleh diturunkan.
 
 ## Cara bekerja
 - Kerjakan satu modul per sesi. Jangan mengerjakan dua modul sekaligus.
