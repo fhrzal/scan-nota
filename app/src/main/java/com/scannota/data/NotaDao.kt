@@ -119,4 +119,24 @@ abstract class NotaDao {
         """
     )
     abstract fun riwayatHargaBarang(barangId: Long): Flow<List<RiwayatHarga>>
+
+    /**
+     * Semua pembelian dari satu pemasok sampai tanggal tertentu, terbaru lebih dulu. Dipakai untuk
+     * menampilkan status harga di layar periksa sebelum nota disimpan (disetujui pengguna
+     * 2026-11-12), dan untuk mengisi satuan yang tidak terbaca dari pembelian terakhir.
+     *
+     * Urutan "terbaru" sama dengan query [barisNotaDenganHarga]: tanggal nota, lalu id nota, lalu
+     * urutan baris. Nota dengan tanggal yang sama ikut dihitung sebagai pembelian sebelumnya, karena
+     * nota yang sedang diperiksa akan mendapat id lebih besar saat disimpan.
+     */
+    @Query(
+        """
+        SELECT d.barang_id, d.satuan, d.harga_satuan
+        FROM detail_nota d
+        JOIN nota n ON n.id = d.nota_id
+        WHERE n.pemasok_id = :pemasokId AND n.tanggal_nota <= :sampaiTanggal
+        ORDER BY n.tanggal_nota DESC, n.id DESC, d.urutan DESC
+        """
+    )
+    abstract suspend fun pembelianDariPemasok(pemasokId: Long, sampaiTanggal: Long): List<PembelianSebelumnya>
 }

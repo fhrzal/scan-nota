@@ -122,6 +122,10 @@ Unit test ada di `app/src/test/java/com/scannota/`.
    - barang meragukan wajib dibetulkan atau dinyatakan "sesuai nota kertas" sebelum nota bisa disimpan;
    - barang baru hanya dibuat atas ketukan pengguna (per barang, atau tombol "jadikan semua … barang baru");
    - perpindahan layar ditulis sendiri (sealed interface `Layar`), dengan ViewModel dari lifecycle-viewmodel-compose.
+   Tambahan 2026-11-12 (disetujui pengguna): status harga langsung di layar periksa sebelum disimpan
+   (query `pembelianDariPemasok` di `data/`), ringkasan naik/turun/tetap dan penyaring "hanya yang
+   naik/turun", satuan kosong diisi dari pembelian terakhir, isi/koreksi angka otomatis, foto bukan nota
+   ditolak, dan pencatatan waktu ke `Android/data/com.scannota/files/catatan_waktu.tsv` (untuk bab pengujian).
    Tahap 2 (belum): riwayat harga per barang, kelola daftar barang/pemasok, perbaikan alias yang
    bertentangan (butuh query ubah/hapus alias di `data/`, minta persetujuan dulu).
 
@@ -154,8 +158,20 @@ Unit test ada di `app/src/test/java/com/scannota/`.
   tidak pernah diubah.
 - Uang dibaca sebagai rupiah bulat. Dua angka desimalnya diabaikan, karena rupiah tidak memakai sen.
   Qty disimpan dalam perseratus (bilangan bulat).
-- Pemeriksaan `harga × qty = subtotal` per baris: jika tidak cocok, barang ditandai meragukan dan
-  tidak pernah dikoreksi otomatis. Nilai yang tidak terbaca dibiarkan kosong, tidak ditebak.
+- Pemeriksaan `harga × qty = subtotal` per baris: jika tidak cocok, barang ditandai meragukan.
+- Isi dan koreksi angka otomatis (`lengkapiAngka`, disetujui pengguna 2026-11-12, menggantikan aturan
+  lama "tidak pernah dikoreksi otomatis"):
+  - satu angka kosong dihitung dari dua angka lain, hanya jika pembagiannya pas;
+  - jika ketiga angka tidak cocok dan nota lengkap (subtotal terbukti oleh total), harga atau qty
+    dikoreksi, hanya jika tepat satu kemungkinan yang pas;
+  - angka hasil hitungan ditandai "dihitung" dan angka OCR aslinya tetap ditampilkan. Jika nota
+    belum lengkap, angka itu wajib dicek pengguna.
+  Hasil: 108 → 113 dari 117 barang benar, salah tanpa tanda tetap 0.
+- Total nota tidak pernah diisi dari jumlah subtotal, karena pemeriksaan kelengkapan akan selalu lolos.
+- Foto ditolak hanya jika tidak tampak seperti nota (`ciriNota`): minimal 2 baris aritmetika
+  (harga × qty = subtotal, format apa pun) atau minimal 2 baris "nama … harga". Nota toko lain dan
+  nota tulisan tangan tidak ditolak, tetapi belum punya pembaca khusus (belum ada contoh asli);
+  barangnya diisi atau dibetulkan manual.
 - Satuan disamakan ke `SATUAN_DIKENAL` (PCS, RTG, PAK, KG; diambil dari nota asli) jika jaraknya
   ≤ 1 dari tepat satu satuan baku. Selain itu, satuan dibiarkan apa adanya dan ditandai.
   Satuan baru ditambahkan hanya setelah muncul di nota asli.

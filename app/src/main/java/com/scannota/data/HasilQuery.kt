@@ -48,3 +48,13 @@ data class RiwayatHarga(
     @ColumnInfo(name = "satuan") val satuan: String?,
     @ColumnInfo(name = "harga_satuan") val hargaSatuan: Long,
 )
+
+/**
+ * Satu pembelian dari seorang pemasok, untuk mencari pembanding harga nota yang belum disimpan.
+ * Lihat [NotaDao.pembelianDariPemasok] dan [ringkasPembanding].
+ */
+data class PembelianSebelumnya(
+    @ColumnInfo(name = "barang_id") val barangId: Long,
+    @ColumnInfo(name = "satuan") val satuan: String?,
+    @ColumnInfo(name = "harga_satuan") val hargaSatuan: Long,
+)

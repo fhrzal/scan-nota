@@ -1,16 +1,21 @@
 package com.scannota.ui
 
 import com.scannota.data.Pemasok
+import com.scannota.data.Pembanding
+import com.scannota.data.StatusHarga
 import com.scannota.data.apakahNotaLengkap
+import com.scannota.data.tentukanStatusHarga
 import com.scannota.matching.HasilPencocokan
 import com.scannota.matching.normalisasiTeks
 import com.scannota.matching.rapikanSpasi
+import com.scannota.parsing.CaraHitung
 import com.scannota.parsing.NotaTerbaca
 import com.scannota.parsing.SatuanTerbaca
 import com.scannota.parsing.Tanggal
 import com.scannota.parsing.bacaQty
 import com.scannota.parsing.bacaTanggal
 import com.scannota.parsing.bacaUang
+import com.scannota.parsing.lengkapiAngka
 import com.scannota.parsing.samakanSatuan
 
 /*
@@ -35,6 +40,10 @@ import com.scannota.parsing.samakanSatuan
  * @param sudahDiperiksa pengguna menyatakan barang meragukan ini sudah benar
  * @param manual nama barang diketik pengguna (barang ditambah manual, atau OCR tidak membaca
  *   namanya), sehingga kolom namanya tetap bisa disunting
+ * @param dihitung cara angka diisi atau dikoreksi aplikasi (lihat lengkapiAngka), null jika apa
+ *   adanya dari OCR atau dari pengguna
+ * @param angkaTerbaca angka asli hasil OCR sebelum dihitung, untuk ditampilkan ke pengguna
+ * @param satuanDariRiwayat satuan tidak terbaca dan diisi dari pembelian terakhir barang ini
  */
 data class BarangDraf(
     val kunci: Long,
@@ -49,6 +58,9 @@ data class BarangDraf(
     val namaBaru: String? = null,
     val sudahDiperiksa: Boolean = false,
     val manual: Boolean = false,
+    val dihitung: CaraHitung? = null,
+    val angkaTerbaca: String? = null,
+    val satuanDariRiwayat: Boolean = false,
 ) {
     val hargaAngka: Long? get() = bacaUang(tanpaSpasi(harga))
     val qtyPerseratus: Long? get() = bacaQty(tanpaSpasi(qty))
@@ -80,20 +92,33 @@ data class BarangDraf(
     /** "Sudah benar" hanya boleh untuk barang yang nama dan angkanya lengkap. */
     val bolehDinyatakanBenar: Boolean get() = teksOcr.isNotBlank() && angkaLengkap
 
-    val perluDiperiksa: Boolean get() = meragukan && !sudahDiperiksa
-
     val barangSelesai: Boolean get() = barangTerpilihId != null || !namaBaru.isNullOrBlank()
 
     /**
-     * Mengubah angka atau satuan. Tanda "sudah diperiksa" dihapus, karena pernyataan pengguna
-     * berlaku untuk angka lama.
+     * Mengubah angka atau satuan. Tanda "sudah diperiksa" dan tanda "dihitung" dihapus, karena
+     * pernyataan pengguna dan hitungan aplikasi berlaku untuk angka lama.
      */
     fun ubahAngka(
         harga: String = this.harga,
         qty: String = this.qty,
         satuan: String = this.satuan,
         subtotal: String = this.subtotal,
-    ): BarangDraf = copy(harga = harga, qty = qty, satuan = satuan, subtotal = subtotal, sudahDiperiksa = false)
+    ): BarangDraf = copy(
+        harga = harga, qty = qty, satuan = satuan, subtotal = subtotal,
+        sudahDiperiksa = false, dihitung = null, angkaTerbaca = null, satuanDariRiwayat = false,
+    )
+
+    /** Mengisi atau mengoreksi angka dengan lengkapiAngka; angka asli disimpan untuk ditampilkan. */
+    fun lengkapi(subtotalTerverifikasi: Boolean): BarangDraf {
+        val a = lengkapiAngka(hargaAngka, qtyPerseratus, subtotalAngka, subtotalTerverifikasi) ?: return this
+        return copy(
+            harga = formatRupiah(a.harga),
+            qty = formatQty(a.qtyPerseratus),
+            subtotal = formatRupiah(a.subtotal),
+            dihitung = a.cara,
+            angkaTerbaca = angkaTerbaca ?: "${harga.ifBlank { "?" }} × ${qty.ifBlank { "?" }} = ${subtotal.ifBlank { "?" }}",
+        )
+    }
 
     fun pilihBarang(barangId: Long): BarangDraf = copy(barangTerpilihId = barangId, dipilihPengguna = true, namaBaru = null)
 
@@ -161,6 +186,56 @@ data class DrafNota(
         }
     }
 
+    /**
+     * Apakah barang ini harus diperiksa pengguna sebelum nota disimpan.
+     *
+     * - Barang meragukan (angka tidak cocok, kosong, satuan tidak dikenal): ya.
+     * - Angka yang dihitung aplikasi atau satuan dari riwayat: hanya jika nota belum lengkap. Jika
+     *   jumlah subtotal sama dengan total, subtotal terbukti benar, sehingga hitungan dari subtotal
+     *   ikut terpercaya.
+     */
+    fun perluDiperiksa(b: BarangDraf): Boolean {
+        if (b.sudahDiperiksa) return false
+        if (b.meragukan) return true
+        return (b.dihitung != null || b.satuanDariRiwayat) && !lengkap
+    }
+
+    /**
+     * Mengisi angka yang kosong, lalu, jika nota ternyata lengkap, mengoreksi angka yang tidak
+     * cocok. Urutannya penting: subtotal yang dihitung ikut dijumlahkan dulu, baru kelengkapan
+     * nota diperiksa.
+     */
+    fun lengkapiAngkaOtomatis(): DrafNota {
+        val terisi = copy(barang = barang.map { it.lengkapi(subtotalTerverifikasi = false) })
+        if (!terisi.lengkap) return terisi
+        return terisi.copy(barang = terisi.barang.map { it.lengkapi(subtotalTerverifikasi = true) })
+    }
+
+    /** Satuan yang kosong diisi dari pembelian terakhir barang yang sama dari pemasok ini. */
+    fun isiSatuanDariRiwayat(pembanding: Map<Long, Pembanding>): DrafNota = copy(
+        barang = barang.map { b ->
+            val satuan = b.barangTerpilihId?.let { pembanding[it]?.satuanTerakhir }
+            if (b.satuan.isBlank() && satuan != null) b.copy(satuan = satuan, satuanDariRiwayat = true) else b
+        },
+    )
+
+    /** Harga sebelumnya dari pemasok yang sama, untuk barang dan satuan yang sama. */
+    fun hargaSebelumnya(b: BarangDraf, pembanding: Map<Long, Pembanding>): Long? {
+        if (pemasokId == null) return null
+        val id = b.barangTerpilihId ?: return null
+        return pembanding[id]?.hargaSebelumnya(b.satuanTerbaca?.teks)
+    }
+
+    /**
+     * Status harga barang sebelum nota disimpan. Aturannya sama dengan query database
+     * (tentukanStatusHarga). null jika belum bisa ditentukan: harga kosong, atau barangnya belum dipilih.
+     */
+    fun statusHarga(b: BarangDraf, pembanding: Map<Long, Pembanding>): StatusHarga? {
+        val harga = b.hargaAngka ?: return null
+        if (b.barangTerpilihId == null) return if (!b.namaBaru.isNullOrBlank()) StatusHarga.BELUM_ADA_PEMBANDING else null
+        return tentukanStatusHarga(hargaSebelumnya(b, pembanding), harga)
+    }
+
     /** Hal yang harus dibereskan sebelum nota bisa disimpan. Kosong berarti boleh disimpan. */
     fun masalahSimpan(): List<String> = buildList {
         if (pemasokId == null && namaPemasokBaru.isBlank()) add("Pilih pemasok atau isi nama pemasok baru.")
@@ -168,7 +243,7 @@ data class DrafNota(
         if (barang.isEmpty()) add("Belum ada barang.")
         barang.count { !it.barangSelesai }.let { if (it > 0) add("$it barang belum dipilih barangnya.") }
         barang.count { !it.angkaLengkap }.let { if (it > 0) add("$it barang angkanya belum lengkap.") }
-        barang.count { it.angkaLengkap && it.perluDiperiksa }.let { if (it > 0) add("$it barang meragukan belum diperiksa.") }
+        barang.count { it.angkaLengkap && perluDiperiksa(it) }.let { if (it > 0) add("$it barang perlu diperiksa.") }
     }
 
     fun ubahBarang(kunci: Long, ubah: (BarangDraf) -> BarangDraf): DrafNota =

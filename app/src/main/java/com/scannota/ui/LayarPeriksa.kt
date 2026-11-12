@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -26,12 +25,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,8 +46,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.scannota.data.Barang
 import com.scannota.data.Pemasok
+import com.scannota.data.Pembanding
+import com.scannota.data.StatusHarga
 import com.scannota.matching.AlasanPenurunan
 import com.scannota.matching.KeputusanPencocokan
+import androidx.compose.ui.graphics.Color
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -68,6 +73,12 @@ fun LayarPeriksa(vm: AplikasiViewModel) {
     val namaBarang = remember(daftarBarang) { daftarBarang.associate { it.id to it.nama } }
     var cariUntuk by remember { mutableStateOf<Long?>(null) }
     val masalah = draf.masalahSimpan()
+    // Harga sebelumnya bergantung pada pemasok dan tanggal nota; dimuat ulang jika salah satunya berubah.
+    LaunchedEffect(draf.pemasokId, draf.tanggalTerbaca) { vm.muatUlangPembanding() }
+    val pembanding = vm.pembanding
+    val status = draf.barang.associate { it.kunci to draf.statusHarga(it, pembanding) }
+    val berubah = setOf(StatusHarga.NAIK, StatusHarga.TURUN)
+    val ditampilkan = draf.barang.withIndex().filter { (_, b) -> !vm.hanyaYangBerubah || status[b.kunci] in berubah }
 
     Scaffold(
         topBar = {
@@ -83,10 +94,14 @@ fun LayarPeriksa(vm: AplikasiViewModel) {
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            item { KartuStatus(status.values.toList(), vm) }
             item { KartuKepala(draf, daftarPemasok, vm) }
             val peringatan = buildList {
                 if (vm.fotoGagal.isNotEmpty()) {
                     add("Foto ke-${vm.fotoGagal.joinToString(", ")} gagal dibaca. Kembali ke kamera untuk memotret ulang.")
+                }
+                if (vm.fotoBukanNota.isNotEmpty()) {
+                    add("Foto ke-${vm.fotoBukanNota.joinToString(", ")} tidak tampak seperti nota dan diabaikan.")
                 }
                 addAll(draf.peringatan())
             }
@@ -98,8 +113,17 @@ fun LayarPeriksa(vm: AplikasiViewModel) {
                     }
                 }
             }
-            itemsIndexed(draf.barang, key = { _, b -> b.kunci }) { i, b ->
-                KartuBarang(i + 1, b, namaBarang, vm, onCari = { cariUntuk = b.kunci })
+            items(ditampilkan, key = { it.value.kunci }) { (i, b) ->
+                KartuBarang(
+                    i + 1, b, namaBarang, vm,
+                    perluDiperiksa = draf.perluDiperiksa(b),
+                    status = status[b.kunci],
+                    hargaSebelumnya = draf.hargaSebelumnya(b, pembanding),
+                    onCari = { cariUntuk = b.kunci },
+                )
+            }
+            if (vm.hanyaYangBerubah && ditampilkan.isEmpty()) {
+                item { Text("Tidak ada barang yang harganya naik atau turun.", Modifier.padding(8.dp)) }
             }
             item {
                 OutlinedButton(onClick = { vm.ubahDraf { it.tambahBarangKosong() } }, modifier = Modifier.fillMaxWidth()) {
@@ -116,6 +140,49 @@ fun LayarPeriksa(vm: AplikasiViewModel) {
             onTutup = { cariUntuk = null },
         )
     }
+}
+
+/** Warna untuk angka yang dihitung aplikasi, supaya terbedakan dari angka hasil baca. */
+private val BIRU = Color(0xFF1565C0)
+
+/** Ringkasan status harga seluruh nota, dan tombol untuk menampilkan hanya barang yang berubah. */
+@Composable
+private fun KartuStatus(status: List<StatusHarga?>, vm: AplikasiViewModel) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            vm.durasiBacaMs?.let { ms ->
+                Text("Dibaca dalam ${ms / 1000},${(ms % 1000) / 100} detik", style = MaterialTheme.typography.bodySmall)
+            }
+            Text("Status harga", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Naik ${status.count { it == StatusHarga.NAIK }}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                Text("Turun ${status.count { it == StatusHarga.TURUN }}", color = HIJAU, fontWeight = FontWeight.SemiBold)
+                Text("Tetap ${status.count { it == StatusHarga.TETAP }}")
+            }
+            Text(
+                "Belum ada pembanding ${status.count { it == StatusHarga.BELUM_ADA_PEMBANDING }} · " +
+                    "Barang belum dipilih ${status.count { it == null }}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Tampilkan hanya yang naik/turun", modifier = Modifier.weight(1f))
+                Switch(checked = vm.hanyaYangBerubah, onCheckedChange = { vm.hanyaYangBerubah = it })
+            }
+        }
+    }
+}
+
+@Composable
+private fun BarisStatusHarga(status: StatusHarga?, harga: Long?, sebelumnya: Long?) {
+    val (teks, warna) = when (status) {
+        StatusHarga.NAIK -> "NAIK Rp ${formatRupiah(abs(harga!! - sebelumnya!!))} (sebelumnya Rp ${formatRupiah(sebelumnya)})" to
+            MaterialTheme.colorScheme.error
+        StatusHarga.TURUN -> "TURUN Rp ${formatRupiah(abs(harga!! - sebelumnya!!))} (sebelumnya Rp ${formatRupiah(sebelumnya)})" to HIJAU
+        StatusHarga.TETAP -> "Harga tetap (Rp ${formatRupiah(sebelumnya ?: 0)})" to MaterialTheme.colorScheme.onSurfaceVariant
+        StatusHarga.BELUM_ADA_PEMBANDING -> "Belum ada pembanding" to Color.Gray
+        null -> "Status harga muncul setelah barang dipilih" to Color.Gray
+    }
+    Text(teks, color = warna, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
 }
 
 @Composable
@@ -202,12 +269,15 @@ private fun KartuBarang(
     b: BarangDraf,
     namaBarang: Map<Long, String>,
     vm: AplikasiViewModel,
+    perluDiperiksa: Boolean,
+    status: StatusHarga?,
+    hargaSebelumnya: Long?,
     onCari: () -> Unit,
 ) {
     val merah = MaterialTheme.colorScheme.error
     OutlinedCard(
         Modifier.fillMaxWidth(),
-        border = BorderStroke(if (b.perluDiperiksa) 2.dp else 1.dp, if (b.perluDiperiksa) merah else MaterialTheme.colorScheme.outlineVariant),
+        border = BorderStroke(if (perluDiperiksa) 2.dp else 1.dp, if (perluDiperiksa) merah else MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (b.manual) {
@@ -223,6 +293,7 @@ private fun KartuBarang(
                 Text("$nomor. ${b.teksOcr}", fontWeight = FontWeight.SemiBold)
             }
 
+            BarisStatusHarga(status, b.hargaAngka, hargaSebelumnya)
             BagianPilihanBarang(b, namaBarang, vm, onCari)
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -239,18 +310,36 @@ private fun KartuBarang(
             }
             KolomAngka("Subtotal", b.subtotal, Modifier.fillMaxWidth()) { v -> vm.ubahBarang(b.kunci) { it.ubahAngka(subtotal = v) } }
 
+            val dihitung = b.dihitung
+            if (dihitung != null) {
+                Text(
+                    "Dihitung aplikasi: ${dihitung.keterangan} (terbaca: ${b.angkaTerbaca})",
+                    color = BIRU,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (b.satuanDariRiwayat) {
+                Text("Satuan tidak terbaca; diisi dari pembelian terakhir.", color = BIRU, style = MaterialTheme.typography.bodySmall)
+            }
             if (b.meragukan) {
                 Text(
                     "Perlu diperiksa: " + b.alasanRagu.joinToString("; "),
                     color = if (b.sudahDiperiksa) MaterialTheme.colorScheme.onSurfaceVariant else merah,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                if (b.sudahDiperiksa) {
-                    Text("Sudah diperiksa", color = HIJAU, style = MaterialTheme.typography.bodySmall)
-                } else if (b.bolehDinyatakanBenar) {
-                    OutlinedButton(onClick = { vm.ubahBarang(b.kunci) { it.copy(sudahDiperiksa = true) } }) {
-                        Text("Angka sudah sesuai nota kertas")
-                    }
+            }
+            if (b.sudahDiperiksa) {
+                Text("Sudah diperiksa", color = HIJAU, style = MaterialTheme.typography.bodySmall)
+            } else if (perluDiperiksa && b.bolehDinyatakanBenar) {
+                if (!b.meragukan) {
+                    Text(
+                        "Nota belum lengkap, jadi angka hitungan aplikasi perlu dicek sekali.",
+                        color = merah,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                OutlinedButton(onClick = { vm.ubahBarang(b.kunci) { it.copy(sudahDiperiksa = true) } }) {
+                    Text("Angka sudah sesuai nota kertas")
                 }
             }
             TextButton(onClick = { vm.ubahDraf { it.hapusBarang(b.kunci) } }) { Text("Hapus baris ini", color = merah) }

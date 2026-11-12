@@ -106,7 +106,9 @@ fun LayarKamera(vm: AplikasiViewModel) {
                     contentPadding = PaddingValues(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    itemsIndexed(vm.foto, key = { _, f -> f.name }) { i, f -> GambarKecil(f, i + 1) { vm.hapusFoto(i) } }
+                    itemsIndexed(vm.foto, key = { _, f -> f.name }) { i, f ->
+                        GambarKecil(f, i + 1, bukanNota = f.name in vm.berkasBukanNota) { vm.hapusFoto(i) }
+                    }
                 }
             }
             Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -158,9 +160,17 @@ fun LayarKamera(vm: AplikasiViewModel) {
         is StatusProses.Gagal -> AlertDialog(
             onDismissRequest = vm::tutupPesanProses,
             confirmButton = {
-                TextButton(onClick = { vm.tutupPesanProses(); vm.prosesFoto() }) { Text("Coba lagi") }
+                if (status.bisaDiulang) {
+                    TextButton(onClick = { vm.tutupPesanProses(); vm.prosesFoto() }) { Text("Coba lagi") }
+                } else {
+                    TextButton(onClick = vm::tutupPesanProses) { Text("Mengerti") }
+                }
             },
-            dismissButton = { TextButton(onClick = vm::tutupPesanProses) { Text("Tutup") } },
+            dismissButton = if (status.bisaDiulang) {
+                { TextButton(onClick = vm::tutupPesanProses) { Text("Tutup") } }
+            } else {
+                null
+            },
             title = { Text("Gagal membaca") },
             text = { Text(status.pesan) },
         )
@@ -211,7 +221,7 @@ private fun PratinjauKamera(penangkap: ImageCapture, modifier: Modifier, onGagal
 }
 
 @Composable
-private fun GambarKecil(berkas: File, nomor: Int, onHapus: () -> Unit) {
+private fun GambarKecil(berkas: File, nomor: Int, bukanNota: Boolean, onHapus: () -> Unit) {
     val gambar by produceState<ImageBitmap?>(null, berkas) {
         value = withContext(Dispatchers.IO) { muatGambarKecil(berkas, 240) }
     }
@@ -222,6 +232,14 @@ private fun GambarKecil(berkas: File, nomor: Int, onHapus: () -> Unit) {
             color = Color.White,
             modifier = Modifier.align(Alignment.TopStart).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 6.dp),
         )
+        if (bukanNota) {
+            Text(
+                "bukan nota",
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.align(Alignment.Center).background(MaterialTheme.colorScheme.error).padding(horizontal = 4.dp),
+            )
+        }
         TextButton(
             onClick = onHapus,
             modifier = Modifier.align(Alignment.BottomCenter).background(Color.Black.copy(alpha = 0.6f)),

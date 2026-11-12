@@ -11,6 +11,7 @@ import com.scannota.ocr.PengenalTeks
 import com.scannota.ocr.susunBarisVisual
 import com.scannota.parsing.NotaTerbaca
 import com.scannota.parsing.bacaNotaOren
+import com.scannota.parsing.ciriNota
 import com.scannota.preprocessing.LangkahPraolah
 import com.scannota.preprocessing.PengolahCitra
 import kotlinx.coroutines.Dispatchers
@@ -39,8 +40,19 @@ private const val SISI_MAKS = 4096
 
 /**
  * @param fotoGagal nomor foto (mulai 1) yang tidak berhasil dibaca walau sudah dicoba ulang
+ * @param fotoBukanNota nomor foto (mulai 1) yang terbaca tetapi tidak tampak seperti nota
+ *   (lihat ciriNota). Foto ini diabaikan supaya tidak menghasilkan isian.
  */
-class HasilProses(val nota: NotaTerbaca, val sambungan: List<Sambungan>, val fotoGagal: List<Int>)
+class HasilProses(
+    val nota: NotaTerbaca,
+    val sambungan: List<Sambungan>,
+    val fotoGagal: List<Int>,
+    val fotoBukanNota: List<Int>,
+    val jumlahFoto: Int,
+) {
+    /** Tidak satu pun foto berhasil dibaca sebagai nota. */
+    val tidakAdaNota: Boolean get() = fotoGagal.size + fotoBukanNota.size >= jumlahFoto
+}
 
 /**
  * Alur dari foto ke nota terbaca: setiap foto diolah (grayscale), dibaca OCR, disusun menjadi baris
@@ -54,6 +66,7 @@ class PemrosesFoto {
         withContext(Dispatchers.Default) {
             val barisPerFoto = mutableListOf<List<BarisVisual>>()
             val gagal = mutableListOf<Int>()
+            val bukanNota = mutableListOf<Int>()
             var pengenal = PengenalTeks()
             try {
                 for ((i, berkas) in foto.withIndex()) {
@@ -75,15 +88,17 @@ class PemrosesFoto {
                         barisPerFoto.add(emptyList())
                     } else {
                         olahan.bitmap.recycle()
-                        barisPerFoto.add(susunBarisVisual(hasil.baris))
+                        val baris = susunBarisVisual(hasil.baris)
+                        // Foto yang bukan nota tidak ikut digabung, supaya tidak menghasilkan isian.
+                        if (ciriNota(baris).tampakNota) barisPerFoto.add(baris) else bukanNota += i + 1
                     }
                 }
                 kemajuan(foto.size, foto.size)
             } finally {
                 pengenal.close()
             }
-            val gabungan = gabungkanFoto(barisPerFoto)
-            HasilProses(bacaNotaOren(gabungan.baris), gabungan.sambungan, gagal)
+            val gabungan = gabungkanFoto(barisPerFoto.ifEmpty { listOf(emptyList()) })
+            HasilProses(bacaNotaOren(gabungan.baris), gabungan.sambungan, gagal, bukanNota, foto.size)
         }
 
     /** Memuat foto; jika sisi terpanjangnya lebih dari [SISI_MAKS], dikecilkan dengan inSampleSize. */

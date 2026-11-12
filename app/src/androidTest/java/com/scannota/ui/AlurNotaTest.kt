@@ -1,10 +1,15 @@
 package com.scannota.ui
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.scannota.data.ScanNotaDatabase
 import com.scannota.data.StatusHarga
+import com.scannota.data.ringkasPembanding
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -60,6 +65,30 @@ class AlurNotaTest {
         assertEquals(526200L, hasil.nota.total)
     }
 
+    /** Gambar SINTETIS berisi tulisan kemasan barang (bukan nota). Tidak boleh menghasilkan isian. */
+    @Test
+    fun fotoBukanNota_ditolakTanpaIsian() = runBlocking {
+        val bitmap = Bitmap.createBitmap(900, 1200, Bitmap.Config.ARGB_8888)
+        val kanvas = Canvas(bitmap)
+        kanvas.drawColor(Color.WHITE)
+        val cat = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 48f }
+        listOf("Mie instan rasa soto", "Netto 75 g", "Isi 100 sachet", "BPOM RI MD 123456789")
+            .forEachIndexed { i, t -> kanvas.drawText(t, 60f, 200f + i * 120f, cat) }
+        val berkas = File(instrumentasi.targetContext.cacheDir, "uji_bukan_nota.jpg")
+        berkas.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+
+        val hasil = PemrosesFoto().proses(listOf(berkas)) { _, _ -> }
+        assertEquals(listOf(1), hasil.fotoBukanNota)
+        assertTrue(hasil.tidakAdaNota)
+        assertTrue(hasil.nota.barang.isEmpty())
+    }
+
+    @Test
+    fun notaTokoLain_tidakDitolak() = runBlocking {
+        val hasil = PemrosesFoto().proses(listOf(fotoAset("tokolain_tanpanomor.jpg"))) { _, _ -> }
+        assertTrue(hasil.fotoBukanNota.isEmpty())
+    }
+
     @Test
     fun simpan_tolakNotaGanda_laluStatusHargaDariQuery() = runBlocking {
         val hasil = PemrosesFoto().proses(listOf(fotoAset("oren_002552.jpg"))) { _, _ -> }
@@ -82,6 +111,11 @@ class AlurNotaTest {
             )
         }
         assertEquals(pemasok.single().id, kedua.pemasokId)
+
+        // Status harga sudah bisa dilihat sebelum nota kedua disimpan.
+        val pembanding = ringkasPembanding(db.notaDao().pembelianDariPemasok(kedua.pemasokId!!, kedua.tanggalTerbaca!!.keEpochHari()))
+        assertTrue(kedua.barang.all { kedua.statusHarga(it, pembanding) == StatusHarga.TETAP })
+
         val notaKedua = layanan.simpan(kedua) as HasilSimpan.Tersimpan
 
         val statusPertama = db.notaDao().barisNotaDenganHarga(pertama.notaId).first().map { it.status() }

@@ -1,6 +1,7 @@
 package com.scannota.ui
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -9,8 +10,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.scannota.data.Barang
 import com.scannota.data.Pemasok
+import com.scannota.data.Pembanding
 import com.scannota.data.RingkasanNota
 import com.scannota.data.ScanNotaDatabase
+import com.scannota.data.ringkasPembanding
 import com.scannota.matching.HasilPencocokan
 import com.scannota.matching.KeputusanPencocokan
 import com.scannota.matching.LayananPencocokan
@@ -34,7 +37,8 @@ sealed interface Layar {
 sealed interface StatusProses {
     data object Diam : StatusProses
     data class Berjalan(val selesai: Int, val jumlah: Int) : StatusProses
-    data class Gagal(val pesan: String) : StatusProses
+    /** @param bisaDiulang false jika mengulang tidak akan membantu (misalnya foto bukan nota) */
+    data class Gagal(val pesan: String, val bisaDiulang: Boolean = true) : StatusProses
 }
 
 /**
@@ -63,6 +67,28 @@ class AplikasiViewModel(aplikasi: Application) : AndroidViewModel(aplikasi) {
     var fotoGagal by mutableStateOf<List<Int>>(emptyList())
         private set
 
+    /** Nomor foto (mulai 1) yang tidak tampak seperti nota pada proses terakhir. */
+    var fotoBukanNota by mutableStateOf<List<Int>>(emptyList())
+        private set
+
+    /** Nama berkas foto yang tidak tampak seperti nota, untuk menandai gambar kecilnya di layar kamera. */
+    var berkasBukanNota by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** Harga sebelumnya per barang dari pemasok yang dipilih, untuk status harga sebelum disimpan. */
+    var pembanding by mutableStateOf<Map<Long, Pembanding>>(emptyMap())
+        private set
+
+    /** Layar periksa hanya menampilkan barang yang harganya naik atau turun. */
+    var hanyaYangBerubah by mutableStateOf(false)
+
+    /** Lama proses dari ketuk "Baca nota" sampai status harga tampil, untuk ditampilkan dan dicatat. */
+    var durasiBacaMs by mutableStateOf<Long?>(null)
+        private set
+
+    private var mulaiBaca = 0L
+    private var jumlahFotoDibaca = 0
+
     var sedangMenyimpan by mutableStateOf(false)
         private set
 
@@ -84,6 +110,11 @@ class AplikasiViewModel(aplikasi: Application) : AndroidViewModel(aplikasi) {
         hapusFotoSementara()
         draf = null
         fotoGagal = emptyList()
+        fotoBukanNota = emptyList()
+        berkasBukanNota = emptySet()
+        pembanding = emptyMap()
+        hanyaYangBerubah = false
+        durasiBacaMs = null
         proses = StatusProses.Diam
         layar = Layar.Kamera
     }
@@ -117,7 +148,11 @@ class AplikasiViewModel(aplikasi: Application) : AndroidViewModel(aplikasi) {
     }
 
     fun hapusFoto(indeks: Int) {
-        if (indeks in foto.indices) foto.removeAt(indeks).delete()
+        if (indeks in foto.indices) {
+            val berkas = foto.removeAt(indeks)
+            berkasBukanNota = berkasBukanNota - berkas.name
+            berkas.delete()
+        }
     }
 
     private fun hapusFotoSementara() {
@@ -130,15 +165,38 @@ class AplikasiViewModel(aplikasi: Application) : AndroidViewModel(aplikasi) {
     fun prosesFoto() {
         if (foto.isEmpty() || proses is StatusProses.Berjalan) return
         val daftar = foto.toList()
+        mulaiBaca = SystemClock.elapsedRealtime()
+        jumlahFotoDibaca = daftar.size
         viewModelScope.launch {
             proses = StatusProses.Berjalan(0, daftar.size)
             try {
                 val hasil = pemroses.proses(daftar) { selesai, jumlah ->
                     withContext(Dispatchers.Main) { proses = StatusProses.Berjalan(selesai, jumlah) }
                 }
-                val drafBaru = drafDari(hasil.nota, hasil.sambungan.count { !it.bersambung }, daftarPemasok.value)
-                draf = terapkanPencocokan(drafBaru, cocokkan(drafBaru))
                 fotoGagal = hasil.fotoGagal
+                fotoBukanNota = hasil.fotoBukanNota
+                berkasBukanNota = hasil.fotoBukanNota.map { daftar[it - 1].name }.toSet()
+                if (hasil.tidakAdaNota) {
+                    proses = if (hasil.fotoBukanNota.isEmpty()) {
+                        StatusProses.Gagal("Foto gagal dibaca. Coba lagi.")
+                    } else {
+                        StatusProses.Gagal(
+                            "Tidak ada nota yang dikenali di foto. Pastikan yang difoto adalah nota pemasok, terang, dan tidak buram.",
+                            bisaDiulang = false,
+                        )
+                    }
+                    return@launch
+                }
+                // Urutan: isi/koreksi angka → cocokkan nama → cari harga sebelumnya → isi satuan dari riwayat.
+                val drafBaru = drafDari(hasil.nota, hasil.sambungan.count { !it.bersambung }, daftarPemasok.value)
+                    .lengkapiAngkaOtomatis()
+                val tercocok = terapkanPencocokan(drafBaru, cocokkan(drafBaru))
+                val p = pembandingUntuk(tercocok)
+                pembanding = p
+                draf = tercocok.isiSatuanDariRiwayat(p)
+                hanyaYangBerubah = false
+                durasiBacaMs = SystemClock.elapsedRealtime() - mulaiBaca
+                catatWaktu("status_tampil", durasiBacaMs!!)
                 proses = StatusProses.Diam
                 layar = Layar.Periksa
             } catch (e: Exception) {
@@ -157,8 +215,59 @@ class AplikasiViewModel(aplikasi: Application) : AndroidViewModel(aplikasi) {
         draf = draf?.let(ubah)
     }
 
+    /**
+     * Mengubah satu barang. Jika barangnya diganti, satuan yang tadinya diisi dari riwayat barang
+     * lama dikosongkan, lalu diisi ulang dari riwayat barang yang baru dipilih.
+     */
     fun ubahBarang(kunci: Long, ubah: (BarangDraf) -> BarangDraf) {
-        draf = draf?.ubahBarang(kunci, ubah)
+        val d = draf ?: return
+        val lama = d.barang.firstOrNull { it.kunci == kunci } ?: return
+        var baru = ubah(lama)
+        if (baru.satuanDariRiwayat && baru.barangTerpilihId != lama.barangTerpilihId) {
+            baru = baru.copy(satuan = "", satuanDariRiwayat = false)
+        }
+        draf = d.ubahBarang(kunci) { baru }.isiSatuanDariRiwayat(pembanding)
+    }
+
+    /** Pemasok baru atau tanggal belum terbaca: pembanding diambil sampai hari ini (tanpa batas). */
+    private suspend fun pembandingUntuk(d: DrafNota): Map<Long, Pembanding> {
+        val pemasokId = d.pemasokId ?: return emptyMap()
+        val sampai = d.tanggalTerbaca?.keEpochHari() ?: Long.MAX_VALUE
+        return ringkasPembanding(db.notaDao().pembelianDariPemasok(pemasokId, sampai))
+    }
+
+    /** Dipanggil layar periksa setiap kali pemasok atau tanggal nota berubah. */
+    fun muatUlangPembanding() {
+        val d = draf ?: return
+        viewModelScope.launch {
+            val p = pembandingUntuk(d)
+            pembanding = p
+            draf = draf?.isiSatuanDariRiwayat(p)
+        }
+    }
+
+    /**
+     * Mencatat lama proses ke berkas catatan_waktu.tsv di folder aplikasi
+     * (Android/data/com.scannota/files/), untuk bab pengujian. Diambil ke laptop dengan
+     * `adb pull /sdcard/Android/data/com.scannota/files/catatan_waktu.tsv`.
+     * Kegagalan menulis catatan tidak boleh mengganggu pemakaian, jadi galatnya diabaikan.
+     */
+    private fun catatWaktu(peristiwa: String, durasiMs: Long) {
+        val d = draf ?: return
+        val baris = listOf(
+            System.currentTimeMillis(), peristiwa, jumlahFotoDibaca, d.barang.size, durasiMs,
+            d.barang.count { d.perluDiperiksa(it) }, d.barang.count { it.dihitung != null },
+        ).joinToString("\t")
+        val folder = getApplication<Application>().getExternalFilesDir(null) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val berkas = File(folder, "catatan_waktu.tsv")
+                if (!berkas.exists()) {
+                    berkas.writeText("waktu_ms\tperistiwa\tjumlah_foto\tjumlah_barang\tdurasi_ms\tbarang_perlu_diperiksa\tbarang_dihitung\n")
+                }
+                berkas.appendText(baris + "\n")
+            }
+        }
     }
 
     /** Ganti pemasok, lalu cocokkan ulang, karena alias berlaku per pemasok. */
@@ -214,6 +323,7 @@ class AplikasiViewModel(aplikasi: Application) : AndroidViewModel(aplikasi) {
             try {
                 when (val hasil = layananSimpan.simpan(d)) {
                     is HasilSimpan.Tersimpan -> {
+                        catatWaktu("tersimpan", SystemClock.elapsedRealtime() - mulaiBaca)
                         pesan = if (hasil.aliasBertentangan > 0) {
                             "Nota tersimpan. ${hasil.aliasBertentangan} pilihan barang tidak diingat, karena teksnya sudah dipakai untuk barang lain."
                         } else {

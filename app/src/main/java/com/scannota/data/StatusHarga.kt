@@ -42,3 +42,29 @@ fun tentukanStatusHarga(hargaSebelumnya: Long?, hargaSekarang: Long): StatusHarg
  */
 fun apakahNotaLengkap(totalNota: Long?, jumlahSubtotal: Long): Boolean =
     totalNota != null && totalNota == jumlahSubtotal
+
+/**
+ * Pembanding satu barang dari satu pemasok.
+ *
+ * @param satuanTerakhir satuan pada pembelian terakhir, untuk mengisi satuan yang tidak terbaca
+ * @param hargaPerSatuan harga terakhir untuk setiap satuan (kunci huruf kapital, atau null jika
+ *   satuannya kosong), karena status harga hanya membandingkan satuan yang sama
+ */
+data class Pembanding(val satuanTerakhir: String?, val hargaPerSatuan: Map<String?, Long>) {
+    fun hargaSebelumnya(satuan: String?): Long? = hargaPerSatuan[satuan?.uppercase()]
+}
+
+/**
+ * Meringkas daftar pembelian (terbaru lebih dulu) menjadi pembanding per barang: yang diambil
+ * hanya pembelian pertama untuk setiap barang dan untuk setiap pasangan (barang, satuan).
+ * Fungsi murni, supaya aturan "pembelian terakhir dengan satuan yang sama" bisa diuji di laptop.
+ */
+fun ringkasPembanding(pembelianTerbaruDulu: List<PembelianSebelumnya>): Map<Long, Pembanding> {
+    val satuanTerakhir = mutableMapOf<Long, String?>()
+    val harga = mutableMapOf<Long, MutableMap<String?, Long>>()
+    for (p in pembelianTerbaruDulu) {
+        if (p.barangId !in satuanTerakhir) satuanTerakhir[p.barangId] = p.satuan
+        harga.getOrPut(p.barangId) { mutableMapOf() }.putIfAbsent(p.satuan?.uppercase(), p.hargaSatuan)
+    }
+    return satuanTerakhir.mapValues { (id, satuan) -> Pembanding(satuan, harga.getValue(id)) }
+}

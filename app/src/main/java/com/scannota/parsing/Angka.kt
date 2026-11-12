@@ -34,8 +34,11 @@ private val HURUF_MIRIP_ANGKA = mapOf(
  */
 private val POLA_ANGKA = Regex("""^(\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,](\d{0,2}))?$""")
 
-/** Coretan atau noda yang kadang menempel di ujung angka, misalnya "15.000,00/". */
-private const val TEPI_SAMPAH = "/'\"`~"
+/**
+ * Coretan atau tanda yang kadang menempel di ujung angka: "15.000,00/" (coretan pena di nota
+ * Toko Oren) dan "2000=" (tanda sama dengan menempel, di nota toko lain).
+ */
+private const val TEPI_SAMPAH = "/'\"`~="
 
 internal class AngkaTerurai(val bulat: Long, val desimal: String, val adaPemisahRibuan: Boolean)
 
