@@ -103,7 +103,18 @@ Unit test ada di `app/src/test/java/com/scannota/`.
    Evaluasi dengan foto bersambung sungguhan masih menunggu foto dari pengguna.
    Usulan yang belum disetujui: buang baris tanpa pasangan yang terletak di tepi foto (sesudah pasangan
    cocok terakhir di foto atas, atau sebelum pasangan cocok pertama di foto bawah).
-6. `preprocessing/`: dievaluasi dengan membandingkan hasil OCR sebelum dan sesudah pengolahan citra pada foto yang sama
+6. `preprocessing/`: selesai (2026-11-12). Dievaluasi pada foto yang sama (`PraolahNotaAsliTest`;
+   barang benar dari 117, 5 foto Toko Oren):
+   asli 108 | abu-abu 111 | + potong kertas 99 | + luruskan 98 | + median 101 | + ambang adaptif 85.
+   Barang salah tanpa tanda 0 di semua varian.
+   - Ambang adaptif paling merugikan, karena memutus garis huruf nota yang tipis.
+   - Potong kertas gagal jika kertas terkena bayangan (005493_b: tepi kiri teks terpotong, 0/11)
+     atau jika foto miring (putaran buatan 5°). Pada latar ramai (005493_a), potong + median
+     memberi 26/26.
+   - Deskew tidak berpengaruh pada foto pengguna (semua di bawah 0,5°).
+   Usulan untuk aplikasi: abu-abu saja. Keputusan ada di pengguna.
+   Varian putaran buatan + ambang belum terukur: ekspor terhenti karena aplikasi dipasang ulang
+   dari luar saat ekspor berjalan.
 7. `ui/`
 
 ## Catatan ML Kit (terbukti di perangkat, jangan diubah tanpa uji ulang)
@@ -189,5 +200,7 @@ Unit test ada di `app/src/test/java/com/scannota/`.
 - Instrumented test tanpa menghapus aplikasi: pasang APK debug dan APK test dengan `adb install -r -t`,
   lalu `adb shell am instrument -w -e class com.scannota.ocr.PengenalTeksSmokeTest com.scannota.test/androidx.test.runner.AndroidJUnitRunner`
 - Ekspor OCR nota asli: salin foto ke `data_uji/foto/`, lalu `alat/ekspor_ocr.sh <label>`
+- Jangan memasang atau membuka aplikasi di HP selama `alat/ekspor_ocr.sh` berjalan. Pemasangan
+  ulang menghentikan proses ekspor ("Process crashed"), seperti yang terjadi pada 2026-11-12.
 - Jangan pakai `./gradlew connectedDebugAndroidTest` di HP toko: tugas itu menghapus aplikasi
   beserta databasenya setelah selesai.
