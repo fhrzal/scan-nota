@@ -62,4 +62,7 @@ if [[ ! -f "$tujuan/ringkasan.tsv" ]]; then
     echo "Ringkasan tidak ditemukan; ekspor tidak berjalan sampai selesai." >&2
     exit 1
 fi
+if grep -q "HABIS_WAKTU" "$tujuan/ringkasan.tsv"; then
+    echo "PERINGATAN: ada foto yang OCR-nya tidak selesai dalam 60 detik (lihat ringkasan.tsv)." >&2
+fi
 echo "Selesai. Ringkasan waktu dan jumlah baris: $tujuan/ringkasan.tsv"

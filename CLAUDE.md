@@ -93,14 +93,25 @@ Unit test ada di `app/src/test/java/com/scannota/`.
    dicocokkan pengguna dengan nota kertasnya.
    Catatan untuk `ui/`: nomor nota sering salah baca (UTM terbaca UTH di 4 dari 5 foto), jadi
    pengguna harus memeriksa nomor sebelum disimpan, karena pemeriksaan nota ganda memakai nomor itu.
-5. `merge/`: kode selesai (2026-11-12). Gabungan nota 005493 (foto b lalu a) menghasilkan 26 barang
-   tanpa ganda, dan 22 barang benar dibanding 20 dari foto a saja. Evaluasi potongan buatan belum
-   dijalankan karena HP terlepas saat ekspor; fotonya sudah ada di `data_uji/foto/potongan_buatan_*`.
-   Evaluasi dengan foto bersambung sungguhan menunggu foto dari pengguna.
+5. `merge/`: selesai (2026-11-12). Hasil (`GabungNotaAsliTest`):
+   - 005493, foto b lalu a: 26 barang tanpa ganda; 22 benar, dibanding 20 dari foto a saja.
+   - Potongan buatan 003182 (3 bagian, tumpang tindih 3 dan 1 barang): tersambung semua; 38 dari 38
+     benar (foto utuh 37). Ada 1 baris tambahan: pecahan di tepi bawah potongan 1 yang tidak
+     berpasangan, ditandai meragukan dan memicu peringatan BARIS=.
+   - Potongan buatan 002552 (2 bagian, ada celah 1 barang): ditandai tidak bersambung, belum lengkap,
+     dan BARIS= memberi peringatan.
+   Evaluasi dengan foto bersambung sungguhan masih menunggu foto dari pengguna.
+   Usulan yang belum disetujui: buang baris tanpa pasangan yang terletak di tepi foto (sesudah pasangan
+   cocok terakhir di foto atas, atau sebelum pasangan cocok pertama di foto bawah).
 6. `preprocessing/`: dievaluasi dengan membandingkan hasil OCR sebelum dan sesudah pengolahan citra pada foto yang sama
 7. `ui/`
 
 ## Catatan ML Kit (terbukti di perangkat, jangan diubah tanpa uji ulang)
+- Hasil OCR deterministik: foto yang sama selalu menghasilkan TSV yang identik byte demi byte
+  (diuji di 3 kali ekspor).
+- ML Kit kadang tidak pernah mengembalikan hasil (proses diam, CPU 0%). Ini terjadi 2 kali dari 28
+  panggilan, dan fotonya berbeda setiap kali. Alat ekspor memakai batas waktu 60 detik dan satu kali
+  percobaan ulang dengan pengenal baru. `ui/` wajib melakukan hal yang sama, plus tombol "coba lagi".
 - Pustaka bundled `com.google.mlkit:text-recognition` menarik `play-services-mlkit-text-recognition`.
   Itu dependensi resmi Google: hanya kelas API (sekitar 3 KB) tanpa model dan tanpa unduhan.
   Modelnya ada di aset pustaka bundled. Jangan dihapus atau dikecualikan.

@@ -8,6 +8,7 @@ import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,22 +52,44 @@ class EksporHasilOcrNotaAsli {
         check(folder.mkdirs()) { "Folder keluaran tidak bisa dibuat: $folder" }
 
         val ringkasan = StringBuilder()
-        PengenalTeks().use { pengenal ->
+        var pengenal = PengenalTeks()
+        try {
             // Pemanasan: panggilan pertama ikut memuat model. Tanpa ini, waktu foto pertama
             // tidak sebanding dengan foto lainnya.
             val mulaiPemanasan = SystemClock.elapsedRealtime()
             pengenal.baca(Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) })
             ringkasan.append("#pemanasan_model_ms\t").append(SystemClock.elapsedRealtime() - mulaiPemanasan).append('\n')
-            ringkasan.append("foto\tlebar\ttinggi\trotasi_exif\tjumlah_baris\tjumlah_kata\twaktu_ocr_ms\n")
+            ringkasan.append("foto\tlebar\ttinggi\trotasi_exif\tjumlah_baris\tjumlah_kata\twaktu_ocr_ms\tpercobaan_ulang\n")
 
             for ((foto, nama) in daftarFoto.zip(namaKeluaran)) {
                 val rotasi = aset.open(foto).use { rotasiDariExif(it) }
                 val bitmap = aset.open(foto).use { BitmapFactory.decodeStream(it) }
                     ?: error("Foto $foto tidak bisa dibuka")
 
-                val mulai = SystemClock.elapsedRealtime()
-                val hasil = pengenal.baca(bitmap, rotasi)
-                val waktu = SystemClock.elapsedRealtime() - mulai
+                // Pada 2026-11-12, ML Kit kadang tidak pernah mengembalikan hasil (proses diam,
+                // CPU 0%): 1 dari 11 foto di dua kali ekspor, dan fotonya berbeda setiap kali.
+                // Karena itu ada batas waktu. Jika habis, pengenal dibuat ulang dan foto dicoba
+                // sekali lagi. Jika masih habis, foto dicatat HABIS_WAKTU.
+                var hasil: HasilOcrFoto? = null
+                var ulang = 0
+                var waktu = 0L
+                while (true) {
+                    val mulai = SystemClock.elapsedRealtime()
+                    hasil = withTimeoutOrNull(BATAS_WAKTU_PER_FOTO_MS) { pengenal.baca(bitmap, rotasi) }
+                    waktu = SystemClock.elapsedRealtime() - mulai
+                    if (hasil != null || ulang == MAKS_PERCOBAAN_ULANG) break
+                    pengenal.close()
+                    pengenal = PengenalTeks()
+                    ulang++
+                }
+
+                if (hasil == null) {
+                    // Bitmap tidak di-recycle, karena ML Kit mungkin masih memakainya.
+                    ringkasan.append(foto).append("\t-\t-\t").append(rotasi).append("\t-\t-\tHABIS_WAKTU\t").append(ulang).append('\n')
+                    pengenal.close()
+                    pengenal = PengenalTeks()
+                    continue
+                }
                 bitmap.recycle()
 
                 File(folder, "$nama.tsv").writeText(keTsv(hasil))
@@ -74,8 +97,10 @@ class EksporHasilOcrNotaAsli {
                     .append(hasil.lebar).append('\t').append(hasil.tinggi).append('\t')
                     .append(rotasi).append('\t')
                     .append(hasil.baris.size).append('\t').append(hasil.baris.sumOf { it.kata.size }).append('\t')
-                    .append(waktu).append('\n')
+                    .append(waktu).append('\t').append(ulang).append('\n')
             }
+        } finally {
+            pengenal.close()
         }
         File(folder, "ringkasan.tsv").writeText(ringkasan.toString())
     }
@@ -95,5 +120,9 @@ class EksporHasilOcrNotaAsli {
 
     private companion object {
         val EKSTENSI_FOTO = setOf("jpg", "jpeg", "png", "webp")
+
+        /** Foto terlama di HP uji butuh sekitar 1,5 detik, jadi 60 detik pasti berarti macet. */
+        const val BATAS_WAKTU_PER_FOTO_MS = 60_000L
+        const val MAKS_PERCOBAAN_ULANG = 1
     }
 }
