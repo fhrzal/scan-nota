@@ -78,7 +78,8 @@ Unit test ada di `app/src/test/java/com/scannota/`.
 
 ## Urutan pengerjaan (usulan, satu modul per sesi)
 0. Kerangka proyek: selesai (2026-11-11)
-1. `data/`: selesai (2026-11-11). Query DAO belum diuji di perangkat; uji instrumented menyusul bersama `ui/`.
+1. `data/`: selesai (2026-11-11). Query simpan, nota ganda, ringkasan, dan status harga sudah diuji di HP
+   lewat `AlurNotaTest` (2026-11-12).
 2. `matching/`: selesai (2026-11-11). Catatan untuk `ui/`: memperbaiki alias lama yang keliru
    (`HasilSimpanAlias.BERTENTANGAN`) butuh query ubah/hapus alias di `data/`. Minta persetujuan dulu.
 3. `ocr/`: selesai (2026-11-12). Smoke test lulus di HP (vivo Y27s, Android 15). Alat ekspor teruji
@@ -112,10 +113,17 @@ Unit test ada di `app/src/test/java/com/scannota/`.
      atau jika foto miring (putaran buatan 5°). Pada latar ramai (005493_a), potong + median
      memberi 26/26.
    - Deskew tidak berpengaruh pada foto pengguna (semua di bawah 0,5°).
-   Usulan untuk aplikasi: abu-abu saja. Keputusan ada di pengguna.
+   Disetujui pengguna: aplikasi memakai abu-abu saja (`LANGKAH_APLIKASI` di ui/PemrosesFoto.kt).
    Varian putaran buatan + ambang belum terukur: ekspor terhenti karena aplikasi dipasang ulang
    dari luar saat ekspor berjalan.
-7. `ui/`
+7. `ui/` tahap 1: selesai (2026-11-12). Layar beranda, kamera (CameraX, maksimal 20 foto, 16:9 dengan sisi
+   panjang ±4080 px), periksa, dan detail (status harga). `AlurNotaTest` di HP menguji foto → database.
+   Aturan yang disetujui pengguna:
+   - barang meragukan wajib dibetulkan atau dinyatakan "sesuai nota kertas" sebelum nota bisa disimpan;
+   - barang baru hanya dibuat atas ketukan pengguna (per barang, atau tombol "jadikan semua … barang baru");
+   - perpindahan layar ditulis sendiri (sealed interface `Layar`), dengan ViewModel dari lifecycle-viewmodel-compose.
+   Tahap 2 (belum): riwayat harga per barang, kelola daftar barang/pemasok, perbaikan alias yang
+   bertentangan (butuh query ubah/hapus alias di `data/`, minta persetujuan dulu).
 
 ## Catatan ML Kit (terbukti di perangkat, jangan diubah tanpa uji ulang)
 - Hasil OCR deterministik: foto yang sama selalu menghasilkan TSV yang identik byte demi byte
@@ -200,6 +208,8 @@ Unit test ada di `app/src/test/java/com/scannota/`.
 - Instrumented test tanpa menghapus aplikasi: pasang APK debug dan APK test dengan `adb install -r -t`,
   lalu `adb shell am instrument -w -e class com.scannota.ocr.PengenalTeksSmokeTest com.scannota.test/androidx.test.runner.AndroidJUnitRunner`
 - Ekspor OCR nota asli: salin foto ke `data_uji/foto/`, lalu `alat/ekspor_ocr.sh <label>`
+- Uji alur aplikasi di HP: pasang kedua APK dengan `adb install -r -t`, lalu
+  `adb shell am instrument -w -e class com.scannota.ui.AlurNotaTest com.scannota.test/androidx.test.runner.AndroidJUnitRunner`
 - Jangan memasang atau membuka aplikasi di HP selama `alat/ekspor_ocr.sh` berjalan. Pemasangan
   ulang menghentikan proses ekspor ("Process crashed"), seperti yang terjadi pada 2026-11-12.
 - Jangan pakai `./gradlew connectedDebugAndroidTest` di HP toko: tugas itu menghapus aplikasi

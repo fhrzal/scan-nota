@@ -34,6 +34,25 @@ data class Tanggal(val hari: Int, val bulan: Int, val tahun: Int) {
         return era * 146097 + hariDalamEra - 719468
     }
 
+    companion object {
+        /**
+         * Kebalikan [keEpochHari], untuk menampilkan tanggal dari database. Rumus "civil from days"
+         * (Howard Hinnant), diuji terhadap java.time untuk setiap hari 2000–2099.
+         */
+        fun dariEpochHari(epochHari: Long): Tanggal {
+            val z = epochHari + 719468
+            val era = (if (z >= 0) z else z - 146096) / 146097
+            val hariDalamEra = z - era * 146097
+            val tahunDalamEra = (hariDalamEra - hariDalamEra / 1460 + hariDalamEra / 36524 - hariDalamEra / 146096) / 365
+            val hariDalamTahun = hariDalamEra - (365 * tahunDalamEra + tahunDalamEra / 4 - tahunDalamEra / 100)
+            val bulanDariMaret = (5 * hariDalamTahun + 2) / 153
+            val hari = hariDalamTahun - (153 * bulanDariMaret + 2) / 5 + 1
+            val bulan = if (bulanDariMaret < 10) bulanDariMaret + 3 else bulanDariMaret - 9
+            val tahun = tahunDalamEra + era * 400 + if (bulan <= 2) 1 else 0
+            return Tanggal(hari.toInt(), bulan.toInt(), tahun.toInt())
+        }
+    }
+
     /** Ditulis tanpa String.format, yang hasilnya mengikuti bahasa HP. */
     override fun toString(): String =
         "${hari.toString().padStart(2, '0')}-${bulan.toString().padStart(2, '0')}-$tahun"

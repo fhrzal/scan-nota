@@ -35,12 +35,13 @@ class TanggalTest {
 
     /** Rumus epoch hari dicocokkan dengan java.time untuk setiap hari dari 2000 sampai 2099. */
     @Test
-    fun epochHari_samaDenganJavaTime_setiapHari2000Sampai2099() {
+    fun epochHari_bolakBalik_samaDenganJavaTime_setiapHari2000Sampai2099() {
         var hari = LocalDate.of(2000, 1, 1)
         val akhir = LocalDate.of(2099, 12, 31)
         while (!hari.isAfter(akhir)) {
             val tanggal = Tanggal(hari.dayOfMonth, hari.monthValue, hari.year)
             assertEquals(hari.toString(), hari.toEpochDay(), tanggal.keEpochHari())
+            assertEquals(hari.toString(), tanggal, Tanggal.dariEpochHari(hari.toEpochDay()))
             hari = hari.plusDays(1)
         }
     }

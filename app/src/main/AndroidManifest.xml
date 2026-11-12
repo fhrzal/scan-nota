@@ -2,7 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Izin kamera ditambahkan nanti di sesi modul ui/. -->
+    <!-- Kamera untuk memotret nota. Foto hanya disimpan sementara di HP dan tidak dikirim ke mana pun. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
     <!--
         Aplikasi harus offline. Pustaka telemetri Google (datatransport) yang ikut terbawa ML Kit
